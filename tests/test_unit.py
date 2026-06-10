@@ -20,6 +20,15 @@ def test_load_prompt_fallback():
     assert "{transcript}" in text or "字幕" in text
 
 
+def test_cookie_file_env_override(monkeypatch, tmp_path):
+    import app.main as m
+    youtube = tmp_path / "youtube.txt"
+    monkeypatch.setenv("YOUTUBE_COOKIE_FILE", str(youtube))
+    monkeypatch.setenv("BILIBILI_COOKIE_FILE", "data/cookies/bilibili.txt")
+    assert m.youtube_cookie_file() == youtube.resolve()
+    assert m.bilibili_cookie_file() == (m.BASE_DIR / "data/cookies/bilibili.txt").resolve()
+
+
 def test_cleanup_storage_removes_oldest_when_over_limit(monkeypatch):
     JOBS_DIR.mkdir(parents=True, exist_ok=True)
     a = JOBS_DIR / "old"

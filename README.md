@@ -22,8 +22,9 @@ uvicorn app.main:app --host 0.0.0.0 --port 18004 --reload
 
 在 `.env` 中至少填写 `OPENAI_API_KEY`；如需音频转写，可填写 `GROQ_API_KEY`。
 
-```bash
-python -m pytest -q
-```
+## Cookie（可选）
+
+将 Netscape `cookies.txt` 放到 `data/cookies/youtube.txt` / `data/cookies/bilibili.txt`；
+也可在 `.env` 设置 `YOUTUBE_COOKIE_FILE`、`BILIBILI_COOKIE_FILE` 指向文件。
 
 欢迎 Issue 和 PR：Bug 修复、站点适配、UI 优化、部署文档改进都可以。

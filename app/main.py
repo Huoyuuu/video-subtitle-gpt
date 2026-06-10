@@ -41,6 +41,24 @@ templates = Jinja2Templates(directory=BASE_DIR / "app" / "templates")
 _jobs: dict[str, dict[str, Any]] = {}
 
 
+def configured_path(env_name: str, default: Path) -> Path:
+    value = (os.getenv(env_name) or "").strip()
+    if not value:
+        return default
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = BASE_DIR / path
+    return path.resolve()
+
+
+def youtube_cookie_file() -> Path:
+    return configured_path("YOUTUBE_COOKIE_FILE", DATA_DIR / "cookies" / "youtube.txt")
+
+
+def bilibili_cookie_file() -> Path:
+    return configured_path("BILIBILI_COOKIE_FILE", DATA_DIR / "cookies" / "bilibili.txt")
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -213,7 +231,7 @@ async def get_youtube_transcript_ytdlp(url: str, job_dir: Path, job_id: str | No
     yt_dlp_bin = Path(sys.executable).parent / ("yt-dlp.exe" if os.name == "nt" else "yt-dlp")
     if not yt_dlp_bin.exists():
         return None
-    cookie = DATA_DIR / "cookies" / "youtube.txt"
+    cookie = youtube_cookie_file()
     outtmpl = str(job_dir / "yt_sub.%(ext)s")
     cmd = [
         str(yt_dlp_bin),
@@ -350,9 +368,8 @@ async def download_audio(url: str, job_dir: Path, job_id: str | None = None) -> 
     yt_dlp_bin = Path(sys.executable).parent / ("yt-dlp.exe" if os.name == "nt" else "yt-dlp")
     if not yt_dlp_bin.exists():
         raise RuntimeError(f"未找到 yt-dlp 可执行文件：{yt_dlp_bin}，请确认已在虚拟环境安装 yt-dlp。")
-    cookies_dir = DATA_DIR / "cookies"
-    bilibili_cookie = cookies_dir / "bilibili.txt"
-    youtube_cookie = cookies_dir / "youtube.txt"
+    bilibili_cookie = bilibili_cookie_file()
+    youtube_cookie = youtube_cookie_file()
     cmd = [
         str(yt_dlp_bin),
         "--newline",
