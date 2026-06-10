@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Video Subtitle GPT</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  * { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+  body { min-height: 100vh; background: #f5f4f0; color: #1c1917; }
+
+  /* cards */
+  .card { background: #fff; border: 1px solid #e7e2d8; border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
+
+  /* step indicator */
+  .step-dot { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: .8rem; flex-shrink: 0; }
+  .step-dot.active { background: #1c1917; color: #fff; }
+  .step-dot.done { background: #16a34a; color: #fff; }
+  .step-dot.pending { background: #e7e2d8; color: #78716c; }
+  .step-line { flex: 1; height: 2px; background: #e7e2d8; margin: 0 6px; }
+  .step-line.done { background: #16a34a; }
+
+  /* buttons */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; border-radius: 10px; padding: .6rem 1rem; font-weight: 700; font-size: .9rem; transition: .15s; cursor: pointer; border: none; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-primary { background: #1c1917; color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #292524; }
+  .btn-secondary { background: #fff; color: #1c1917; border: 1px solid #d6d0c4; }
+  .btn-secondary:hover:not(:disabled) { background: #faf8f4; border-color: #a8a099; }
+  .btn-ghost { background: transparent; color: #78716c; border: 1px solid #e7e2d8; }
+  .btn-ghost:hover { background: #faf8f4; color: #1c1917; }
+  .btn-danger { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+  .btn-danger:hover { background: #fee2e2; }
+
+  /* form */
+  .input, .textarea, .select {
+    border: 1px solid #d6d0c4; border-radius: 10px; background: #fff;
+    outline: none; transition: border-color .15s, box-shadow .15s;
+  }
+  .input { padding: .75rem 1rem; font-size: 1rem; width: 100%; }
+  .textarea { padding: .75rem 1rem; resize: vertical; width: 100%; }
+  .select { padding: .6rem .85rem; font-weight: 600; color: #44403c; }
+  .input:focus, .textarea:focus, .select:focus {
+    border-color: #92400e; box-shadow: 0 0 0 3px rgba(146,64,14,.1);
+  }
+
+  /* mode tabs */
+  .mode-tab { border-radius: 8px; padding: .5rem .9rem; font-weight: 700; font-size: .875rem; border: 1px solid #d6d0c4; background: #fff; color: #57534e; cursor: pointer; transition: .15s; }
+  .mode-tab:hover { border-color: #92400e; background: #fef9f0; color: #92400e; }
+  .mode-tab.active { background: #1c1917; color: #fff; border-color: #1c1917; }
+
+  /* status badges */
+  .badge { display: inline-flex; align-items: center; gap: .3rem; border-radius: 999px; padding: .3rem .75rem; font-weight: 700; font-size: .8rem; }
+  .badge-idle { background: #f5f4f0; color: #78716c; }
+  .badge-queued, .badge-running { background: #fef3c7; color: #92400e; }
+  .badge-done { background: #dcfce7; color: #15803d; }
+  .badge-error { background: #fee2e2; color: #b91c1c; }
+  .badge-audio_ready { background: #dbeafe; color: #1d4ed8; }
+
+  /* progress */
+  .progress-track { height: 8px; background: #e7e2d8; border-radius: 999px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #d97706, #ea580c); transition: width .4s ease; }
+  @keyframes progress-pulse { 0%,100% { opacity:1 } 50% { opacity:.6 } }
+  .progress-fill.running { animation: progress-pulse 1.5s infinite; }
+
+  /* history list */
+  .history-card { background: #fff; border: 1px solid #e7e2d8; border-radius: 12px; padding: .875rem 1rem; cursor: pointer; transition: .15s; }
+  .history-card:hover { border-color: #d97706; box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+  .history-card.selected { border-color: #d97706; background: #fffbeb; box-shadow: 0 0 0 3px rgba(217,119,6,.12); }
+
+  /* markdown result */
+  .md-body { line-height: 1.8; }
+  .md-body h1,.md-body h2,.md-body h3 { font-weight: 800; margin: 1.2em 0 .5em; color: #1c1917; }
+  .md-body h1 { font-size: 1.3rem; }
+  .md-body h2 { font-size: 1.15rem; }
+  .md-body h3 { font-size: 1rem; }
+  .md-body p { margin: .6em 0; }
+  .md-body ul, .md-body ol { padding-left: 1.5em; margin: .6em 0; }
+  .md-body li { margin: .3em 0; }
+  .md-body strong { font-weight: 700; }
+  .md-body code { background: #f5f4f0; padding: .15em .4em; border-radius: 5px; font-size: .88em; font-family: 'SF Mono', 'Fira Code', Consolas, monospace; }
+  .md-body pre { background: #1c1917; color: #f5f5f4; padding: 1rem; border-radius: 10px; overflow-x: auto; }
+  .md-body pre code { background: none; padding: 0; }
+  .md-body blockquote { border-left: 3px solid #d97706; padding-left: 1em; color: #57534e; margin: .6em 0; }
+
+  /* log block */
+  .log-block { background: #0f0f0e; color: #e5e5e4; border-radius: 12px; padding: .875rem 1rem; font-family: 'SF Mono','Fira Code',Consolas,monospace; font-size: .8rem; line-height: 1.7; max-height: 260px; overflow-y: auto; }
+
+  /* transcript box */
+  .transcript-box { background: #faf8f4; border: 1px solid #e7e2d8; border-radius: 12px; padding: 1rem; max-height: 320px; overflow-y: auto; font-family: 'SF Mono','Fira Code',Consolas,monospace; font-size: .82rem; line-height: 1.7; white-space: pre-wrap; word-break: break-word; color: #292524; }
+
+  /* alert */
+  .alert-error { border-radius: 12px; padding: .875rem 1rem; background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; white-space: pre-wrap; font-size: .9rem; }
+  .alert-info { border-radius: 12px; padding: .875rem 1rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; font-size: .9rem; }
+
+  /* animations */
+  .fade-in { animation: fadeIn .2s ease; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(6px) } to { opacity:1; transform:none } }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #f1ede3; border-radius: 10px; }
+  ::-webkit-scrollbar-thumb { background: #c9bfae; border-radius: 10px; }
+
+  /* spinner */
+  @keyframes spin { to { transform: rotate(360deg) } }
+  .spin { animation: spin .8s linear infinite; }
+
+  .hide { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header class="border-b border-stone-200 bg-white/80 backdrop-blur sticky top-0 z-10">
+  <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <i data-lucide="video" class="w-5 h-5 text-amber-600"></i>
+      <span class="font-black text-lg tracking-tight">Video Subtitle GPT</span>
+    </div>
+    <span class="text-sm text-stone-500 font-medium">智能视频字幕提取与 AI 总结</span>
+  </div>
+</header>
+
+<main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+
+  <!-- ① 新建任务 card -->
+  <section class="card p-5 fade-in">
+    <div class="flex items-center gap-2 mb-4">
+      <i data-lucide="plus-circle" class="w-5 h-5 text-amber-600"></i>
+      <h2 class="font-black text-base">新建任务</h2>
+    </div>
+
+    <form id="jobForm" class="space-y-4">
+      <!-- URL input -->
+      <div class="flex gap-3">
+        <input name="url" id="url" class="input flex-1"
+          placeholder="粘贴 YouTube / Bilibili 链接（仅总结模式可留空）"/>
+        <button type="submit" id="submitBtn" class="btn btn-primary whitespace-nowrap px-5">
+          <i data-lucide="play" class="w-4 h-4"></i>
+          <span>开始</span>
+        </button>
+      </div>
+
+      <!-- Mode + options row -->
+      <div class="flex flex-wrap items-center gap-2">
+        <button type="button" data-mode="auto"    class="mode-tab active">🚀 自动全流程</button>
+        <button type="button" data-mode="audio"   class="mode-tab">🎵 仅下载音频</button>
+        <button type="button" data-mode="summary" class="mode-tab">📝 仅总结字幕</button>
+
+        <div class="ml-auto flex items-center gap-2">
+          <label class="flex items-center gap-1.5 text-sm font-semibold text-stone-600 cursor-pointer select-none">
+            <input type="checkbox" name="use_cache" id="useCache" checked class="accent-amber-600 w-4 h-4"/>
+            启用缓存
+          </label>
+          <select name="prompt_name" class="select text-sm">
+            {% for p in prompts %}<option value="{{p}}">{{p}}</option>{% endfor %}
+          </select>
+          <button type="button" id="advBtn" class="btn btn-ghost text-sm py-1.5">
+            <i data-lucide="settings-2" class="w-4 h-4"></i>高级
+          </button>
+        </div>
+      </div>
+
+      <input type="hidden" name="start_mode" id="startMode" value="auto"/>
+
+      <!-- Advanced (hidden by default) -->
+      <div id="advBox" class="hide grid md:grid-cols-2 gap-3 fade-in">
+        <div>
+          <label class="block text-xs font-bold text-stone-500 mb-1.5">自定义 Prompt（支持 {transcript} 变量）</label>
+          <textarea name="custom_prompt" rows="5" class="textarea text-sm"
+            placeholder="留空使用预设 Prompt"></textarea>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-stone-500 mb-1.5">手动字幕（仅总结模式）</label>
+          <textarea name="manual_transcript" id="manualTranscript" rows="5" class="textarea text-sm"
+            placeholder="粘贴字幕文本…"></textarea>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <!-- ② 当前任务进度（提交后显示） -->
+  <section id="currentJobSection" class="card p-5 fade-in hide">
+    <div class="flex items-center justify-between mb-4">
+      <div class="flex items-center gap-2">
+        <i data-lucide="activity" class="w-5 h-5 text-amber-600"></i>
+        <h2 class="font-black text-base">当前任务</h2>
+      </div>
+      <div class="flex items-center gap-2">
+        <span id="statusBadge" class="badge badge-idle">idle</span>
+        <span id="stageBadge" class="badge badge-idle">等待中</span>
+      </div>
+    </div>
+
+    <!-- Progress bar -->
+    <div class="progress-track mb-1.5">
+      <div id="progressBar" class="progress-fill" style="width:0%"></div>
+    </div>
+    <div class="flex items-center justify-between text-xs text-stone-500 mb-4">
+      <span id="progressPct" class="font-bold text-stone-700">0%</span>
+      <span id="progressMeta"></span>
+    </div>
+
+    <!-- Error / info message -->
+    <div id="jobMessage" class="hide mb-4"></div>
+
+    <!-- Action buttons -->
+    <div class="flex flex-wrap gap-2">
+      <button id="retryBtn"      class="hide btn btn-secondary text-sm"><i data-lucide="rotate-ccw" class="w-4 h-4"></i>重试</button>
+      <button id="reSummaryBtn"  class="hide btn btn-secondary text-sm"><i data-lucide="file-text" class="w-4 h-4"></i>重跑总结</button>
+      <a      id="audioLink"     class="hide btn btn-secondary text-sm" target="_blank"><i data-lucide="download" class="w-4 h-4"></i>下载音频</a>
+      <a      id="transcriptLink" class="hide btn btn-secondary text-sm" target="_blank"><i data-lucide="file-text" class="w-4 h-4"></i>下载字幕</a>
+      <a      id="resultLink"    class="hide btn btn-secondary text-sm" target="_blank"><i data-lucide="download" class="w-4 h-4"></i>下载结果</a>
+      <button id="logsToggleBtn" class="btn btn-ghost text-sm ml-auto"><i data-lucide="terminal" class="w-4 h-4"></i>日志</button>
+    </div>
+
+    <!-- Logs (collapsible) -->
+    <div id="logsBox" class="hide mt-4 fade-in">
+      <div id="logsContent" class="log-block">
+        <span class="text-stone-500">暂无日志</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ③ 结果区：左历史 + 右详情 -->
+  <div class="grid lg:grid-cols-[320px_1fr] gap-5">
+
+    <!-- 历史记录 -->
+    <aside class="card p-4 fade-in lg:sticky lg:top-20 self-start max-h-[calc(100vh-120px)] overflow-y-auto">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <i data-lucide="clock" class="w-4 h-4 text-stone-500"></i>
+          <h2 class="font-black text-sm">历史记录</h2>
+        </div>
+        <button id="refreshHistory" class="btn btn-ghost text-xs py-1 px-2">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+      <div id="historyList" class="space-y-2">
+        <div class="text-center text-stone-400 text-sm py-8">加载中…</div>
+      </div>
+    </aside>
+
+    <!-- 详情面板 -->
+    <div class="space-y-5">
+
+      <!-- 字幕内容 -->
+      <section id="transcriptSection" class="card p-5 fade-in hide">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <i data-lucide="captions" class="w-4 h-4 text-stone-500"></i>
+            <h3 class="font-black text-sm">字幕内容</h3>
+          </div>
+          <button onclick="copyEl('transcriptBox', this)" class="btn btn-ghost text-xs py-1 px-2">
+            <i data-lucide="copy" class="w-3.5 h-3.5"></i>复制
+          </button>
+        </div>
+        <div id="transcriptBox" class="transcript-box">暂无字幕</div>
+      </section>
+
+      <!-- AI 总结 -->
+      <section id="resultSection" class="card p-5 fade-in hide">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <i data-lucide="sparkles" class="w-4 h-4 text-amber-500"></i>
+            <h3 class="font-black text-sm">AI 总结</h3>
+            <span id="resultTitle" class="text-xs text-stone-400 font-medium truncate max-w-xs"></span>
+          </div>
+          <button onclick="copyEl('resultMd', this)" class="btn btn-ghost text-xs py-1 px-2">
+            <i data-lucide="copy" class="w-3.5 h-3.5"></i>复制
+          </button>
+        </div>
+        <!-- hidden raw text for copy -->
+        <div id="resultMd" class="hidden"></div>
+        <div id="resultBody" class="md-body text-stone-800"></div>
+      </section>
+
+      <!-- 空状态提示 -->
+      <div id="emptyState" class="card p-10 text-center fade-in">
+        <i data-lucide="video" class="w-10 h-10 text-stone-300 mx-auto mb-3"></i>
+        <p class="text-stone-400 font-semibold">粘贴链接，点击「开始」即可处理</p>
+        <p class="text-stone-300 text-sm mt-1">或从左侧历史记录中选择一条查看</p>
+      </div>
+
+    </div>
+  </div>
+</main>
+
+<script>
+marked.setOptions({ breaks: true, gfm: true });
+
+lucide.createIcons();
+
+let jobId = null, pollTimer = null, lastJob = null;
+let historyItems = [];
+
+const $ = id => document.getElementById(id);
+
+/* ── utils ── */
+function esc(s) {
+  return (s ?? '').toString().replace(/[&<>"']/g, m =>
+    ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
+}
+
+function copyEl(id, btn) {
+  const el = $(id);
+  const text = el.innerText || el.textContent || '';
+  navigator.clipboard.writeText(text);
+  if (!btn) return;
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<i data-lucide="check" class="w-3.5 h-3.5"></i>已复制';
+  lucide.createIcons();
+  setTimeout(() => { btn.innerHTML = orig; lucide.createIcons(); }, 1600);
+}
+
+function showEl(id, show = true) {
+  const el = $(id);
+  if (!el) return;
+  show ? el.classList.remove('hide') : el.classList.add('hide');
+}
+
+function setLink(id, url) {
+  const el = $(id);
+  if (!el) return;
+  if (url) { el.href = url; showEl(id); }
+  else showEl(id, false);
+}
+
+function renderMd(text) {
+  try { return marked.parse(text || ''); }
+  catch { return '<pre>' + esc(text) + '</pre>'; }
+}
+
+/* ── mode tabs ── */
+document.querySelectorAll('.mode-tab[data-mode]').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.mode-tab[data-mode]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    $('startMode').value = btn.dataset.mode;
+    if (btn.dataset.mode === 'summary') $('advBox').classList.remove('hide');
+  };
+});
+
+$('advBtn').onclick = () => $('advBox').classList.toggle('hide');
+$('logsToggleBtn').onclick = () => {
+  const box = $('logsBox');
+  box.classList.toggle('hide');
+  if (!box.classList.contains('hide')) {
+    const btn = $('logsToggleBtn');
+    btn.innerHTML = '<i data-lucide="terminal" class="w-4 h-4"></i>收起日志';
+    lucide.createIcons();
+  } else {
+    $('logsToggleBtn').innerHTML = '<i data-lucide="terminal" class="w-4 h-4"></i>日志';
+    lucide.createIcons();
+  }
+};
+
+/* ── submit ── */
+$('jobForm').onsubmit = async e => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  if (!$('useCache').checked) { fd.delete('use_cache'); fd.append('use_cache', 'false'); }
+
+  $('submitBtn').disabled = true;
+  $('submitBtn').innerHTML = '<svg class="w-4 h-4 spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>处理中…';
+
+  showEl('jobMessage', false);
+
+  try {
+    const r = await fetch('/api/jobs', { method: 'POST', body: fd });
+    if (!r.ok) {
+      showJobError(await r.text());
+      resetSubmitBtn();
+      return;
+    }
+    jobId = (await r.json()).job_id;
+    showEl('currentJobSection');
+    showEl('emptyState', false);
+    clearInterval(pollTimer);
+    pollTimer = setInterval(poll, 1200);
+    poll();
+  } catch (err) {
+    showJobError('请求失败: ' + err.message);
+    resetSubmitBtn();
+  }
+};
+
+function resetSubmitBtn() {
+  $('submitBtn').disabled = false;
+  $('submitBtn').innerHTML = '<i data-lucide="play" class="w-4 h-4"></i><span>开始</span>';
+  lucide.createIcons();
+}
+
+function showJobError(msg) {
+  const el = $('jobMessage');
+  el.className = 'alert-error mb-4 fade-in';
+  el.textContent = msg;
+  showEl('jobMessage');
+}
+
+/* ── poll ── */
+async function poll() {
+  if (!jobId) return;
+  try {
+    const j = await (await fetch('/api/jobs/' + jobId)).json();
+    renderJob(j);
+    if (['done', 'error', 'audio_ready'].includes(j.status)) {
+      clearInterval(pollTimer);
+      resetSubmitBtn();
+      loadHistory();
+    }
+  } catch (e) { console.error(e); }
+}
+
+/* ── render job ── */
+function renderJob(j) {
+  lastJob = j;
+  const st = j.status || 'idle';
+
+  // badges
+  $('statusBadge').textContent = st;
+  $('statusBadge').className = 'badge badge-' + st;
+  $('stageBadge').textContent = j.stage || '-';
+  $('stageBadge').className = 'badge ' + (['running','queued'].includes(st) ? 'badge-running' : 'badge-' + st);
+
+  // progress
+  const pct = j.progress || 0;
+  const bar = $('progressBar');
+  bar.style.width = pct + '%';
+  bar.className = 'progress-fill' + (['running','queued'].includes(st) ? ' running' : '');
+  $('progressPct').textContent = pct + '%';
+
+  const meta = [];
+  if (j.url_hash) meta.push('ID: ' + j.url_hash.slice(0, 8));
+  if (j.cache_hit) meta.push('✓ 缓存命中');
+  $('progressMeta').textContent = meta.join(' · ');
+
+  // message
+  if (j.message) {
+    const el = $('jobMessage');
+    el.className = (st === 'error' ? 'alert-error' : 'alert-info') + ' mb-4 fade-in';
+    el.textContent = j.message;
+    showEl('jobMessage');
+  } else {
+    showEl('jobMessage', false);
+  }
+
+  // logs
+  if (j.logs && j.logs.length) {
+    $('logsContent').innerHTML = j.logs.map((x, i) =>
+      `<div class="py-0.5"><span class="text-amber-400 font-bold">${i+1}.</span> ` +
+      `<span class="text-stone-500 text-xs">[${esc((x.time||'').slice(11,19))}]</span> ` +
+      `<span>${esc(x.msg)}</span></div>`
+    ).join('');
+    // auto-scroll to bottom
+    const lb = $('logsContent');
+    lb.scrollTop = lb.scrollHeight;
+  }
+
+  // action buttons
+  showEl('retryBtn', !!j.id);
+  showEl('reSummaryBtn', !!j.transcript);
+  setLink('audioLink', j.audio_url);
+  setLink('transcriptLink', j.transcript_url);
+  setLink('resultLink', j.result_url);
+
+  // transcript
+  if (j.transcript) {
+    $('transcriptBox').textContent = j.transcript;
+    showEl('transcriptSection');
+  }
+
+  // result
+  if (j.result) {
+    $('resultMd').textContent = j.result;
+    $('resultBody').innerHTML = renderMd(j.result);
+    $('resultTitle').textContent = j.title || '';
+    showEl('resultSection');
+  }
+}
+
+/* ── retry / re-summary ── */
+$('retryBtn').onclick = async () => {
+  if (!lastJob) return;
+  const fd = new FormData();
+  fd.append('start_mode', 'same');
+  const r = await fetch('/api/jobs/' + lastJob.id + '/retry', { method: 'POST', body: fd });
+  jobId = (await r.json()).job_id;
+  clearInterval(pollTimer);
+  pollTimer = setInterval(poll, 1200);
+  poll();
+};
+
+$('reSummaryBtn').onclick = () => {
+  if (!lastJob?.transcript) return;
+  document.querySelector('.mode-tab[data-mode="summary"]').click();
+  $('manualTranscript').value = lastJob.transcript;
+  $('advBox').classList.remove('hide');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+/* ── history ── */
+async function loadHistory() {
+  try {
+    const r = await fetch('/api/history?limit=40');
+    historyItems = (await r.json()).items || [];
+    renderHistory();
+  } catch {
+    $('historyList').innerHTML = '<div class="text-center text-red-400 text-sm py-6">加载失败</div>';
+  }
+}
+
+function renderHistory() {
+  if (!historyItems.length) {
+    $('historyList').innerHTML = '<div class="text-center text-stone-400 text-sm py-8">暂无历史记录</div>';
+    return;
+  }
+  $('historyList').innerHTML = historyItems.map((it, i) => `
+    <article data-idx="${i}" onclick="openHistory(${i})" class="history-card fade-in">
+      <div class="font-bold text-sm text-stone-900 mb-0.5 truncate">${esc(it.title || '无标题')}</div>
+      <div class="text-xs text-stone-400 mb-1.5 truncate">${esc(it.url || '手动字幕')}</div>
+      <p class="text-xs text-stone-500 line-clamp-2">${esc((it.summary || '').slice(0, 160))}</p>
+      <div class="text-xs text-stone-300 mt-1.5">${esc(it.created_at || '')}</div>
+    </article>
+  `).join('');
+}
+
+function openHistory(i) {
+  const it = historyItems[i];
+  if (!it) return;
+
+  // highlight selected
+  document.querySelectorAll('.history-card').forEach(el => el.classList.remove('selected'));
+  const el = document.querySelector(`[data-idx="${i}"]`);
+  if (el) el.classList.add('selected');
+
+  // show result panel
+  showEl('emptyState', false);
+  showEl('currentJobSection', false);
+
+  if (it.summary) {
+    $('resultMd').textContent = it.summary;
+    $('resultBody').innerHTML = renderMd(it.summary);
+    $('resultTitle').textContent = it.title || '';
+    showEl('resultSection');
+  } else {
+    showEl('resultSection', false);
+  }
+
+  // transcript link in history is transcript_hash based
+  if (it.transcript_hash) {
+    setLink('transcriptLink', '/cache/transcripts/' + it.transcript_hash + '.txt');
+    showEl('transcriptSection', false);
+  } else {
+    showEl('transcriptSection', false);
+  }
+
+  setLink('audioLink', null);
+  setLink('resultLink', null);
+}
+
+$('refreshHistory').onclick = loadHistory;
+
+/* ── init ── */
+loadHistory();
+</script>
+</body>
+</html>
