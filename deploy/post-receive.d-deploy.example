@@ -5,19 +5,17 @@ BRANCH=main
 while read oldrev newrev refname; do
   [ "$refname" = "refs/heads/$BRANCH" ] || continue
   echo "Deploy hook: deploying $refname to $APP"
-  mkdir -p "$APP"
-  GIT_WORK_TREE="$APP" git checkout -f "$BRANCH"
+  unset GIT_DIR GIT_WORK_TREE
+  if [ ! -d "$APP/.git" ]; then
+    rm -rf "$APP"
+    git clone /home/huoyuuu/gitea/repositories/huoyuuu/video-subtitle-gpt.git "$APP"
+  fi
   cd "$APP"
+  git fetch origin "$BRANCH"
+  git reset --hard "origin/$BRANCH"
+  find "$APP" -type f \( -name '*.sh' -o -name '*.service' -o -name '*.example' \) -exec sed -i 's/\r$//' {} +
   [ -f .env ] || cp .env.example .env
-  python3 -m venv .venv
-  . .venv/bin/activate
-  pip install -U pip wheel >/dev/null
-  pip install -r requirements.txt >/dev/null
-  mkdir -p data/jobs data/prompts
   chmod +x scripts/deploy.sh || true
-  sudo cp deploy/video-subtitle-gpt.service /etc/systemd/system/video-subtitle-gpt.service
-  sudo systemctl daemon-reload
-  sudo systemctl enable --now video-subtitle-gpt.service
-  sudo systemctl restart video-subtitle-gpt.service
+  bash scripts/deploy.sh
   echo "Deploy hook: deployed $refname to $APP"
 done
