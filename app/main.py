@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import sqlite3
 import sys
@@ -57,6 +58,174 @@ def youtube_cookie_file() -> Path:
 
 def bilibili_cookie_file() -> Path:
     return configured_path("BILIBILI_COOKIE_FILE", DATA_DIR / "cookies" / "bilibili.txt")
+
+
+def is_youtube_url(url: str) -> bool:
+    u = (url or "").lower()
+    return "youtube.com" in u or "youtu.be" in u
+
+
+def is_bilibili_url(url: str) -> bool:
+    u = (url or "").lower()
+    return "bilibili.com" in u or "b23.tv" in u
+
+
+def truthy_env(name: str, default: str = "") -> bool:
+    return str(os.getenv(name, default) or "").lower() in {"1", "true", "yes", "on"}
+
+
+def yt_dlp_executable() -> Path | None:
+    """优先使用当前虚拟环境里的 yt-dlp；没有时回退到 PATH。"""
+    local = Path(sys.executable).parent / ("yt-dlp.exe" if os.name == "nt" else "yt-dlp")
+    if local.exists():
+        return local
+    found = shutil.which("yt-dlp")
+    return Path(found) if found else None
+
+
+def find_executable(name: str) -> str | None:
+    found = shutil.which(name)
+    if found:
+        return found
+    # systemd 的 PATH 有时不含 /usr/local/bin；部署脚本会把 deno 安装到这里。
+    if os.name != "nt":
+        for base in ("/usr/local/bin", "/usr/bin", "/bin", "/opt/homebrew/bin", "/usr/local/sbin"):
+            p = Path(base) / name
+            if p.exists() and os.access(p, os.X_OK):
+                return str(p)
+    return None
+
+
+def env_cli_args(name: str) -> list[str]:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return []
+    try:
+        return shlex.split(raw)
+    except ValueError:
+        return raw.split()
+
+
+def non_empty_file(path: Path) -> bool:
+    try:
+        return path.exists() and path.is_file() and path.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def youtube_cookie_args(job_id: str | None = None) -> tuple[list[str], bool]:
+    cookie = youtube_cookie_file()
+    browser = (os.getenv("YOUTUBE_COOKIES_FROM_BROWSER") or "").strip()
+    if non_empty_file(cookie):
+        if job_id:
+            add_log(job_id, "检测到 YouTube cookies 文件，yt-dlp 将携带 cookies。")
+        return ["--cookies", str(cookie)], True
+    if browser:
+        if job_id:
+            add_log(job_id, f"检测到 YOUTUBE_COOKIES_FROM_BROWSER={browser}，yt-dlp 将从浏览器读取 cookies。")
+        return ["--cookies-from-browser", browser], True
+    if job_id:
+        if cookie.exists():
+            add_log(job_id, f"YouTube cookies 文件为空或不可读：{cookie}")
+        else:
+            add_log(job_id, f"未找到 YouTube cookies 文件：{cookie}")
+    return [], False
+
+
+def yt_dlp_js_runtime_args(job_id: str | None = None) -> list[str]:
+    """YouTube 新版提取需要 JS runtime；自动发现 deno/node/qjs/bun，也允许环境变量覆盖。"""
+    mode = (os.getenv("YTDLP_JS_RUNTIME") or "auto").strip()
+    if mode.lower() in {"", "auto"}:
+        candidates = [
+            ("deno", "deno"),
+            ("node", "node"),
+            ("quickjs", "qjs"),
+            ("bun", "bun"),
+        ]
+        for name, exe in candidates:
+            found = find_executable(exe)
+            if found:
+                value = f"{name}:{found}"
+                if job_id:
+                    add_log(job_id, f"检测到 JS runtime：{value}")
+                return ["--js-runtimes", value]
+        if job_id:
+            add_log(job_id, "未检测到 deno/node/qjs/bun；YouTube 可能因 JS challenge 失败。")
+        return []
+    if mode.lower() in {"none", "off", "false", "0"}:
+        if job_id:
+            add_log(job_id, "YTDLP_JS_RUNTIME 已关闭，不向 yt-dlp 传递 JS runtime。")
+        return []
+    if job_id:
+        add_log(job_id, f"使用 YTDLP_JS_RUNTIME={mode}")
+    return ["--js-runtimes", mode]
+
+
+def youtube_ytdlp_args(job_id: str | None = None) -> tuple[list[str], bool]:
+    args: list[str] = []
+    args += yt_dlp_js_runtime_args(job_id)
+    cookie_args, has_auth = youtube_cookie_args(job_id)
+    args += cookie_args
+
+    remote_components = (os.getenv("YTDLP_REMOTE_COMPONENTS") or "").strip()
+    if remote_components and remote_components.lower() not in {"none", "off", "false", "0"}:
+        args += ["--remote-components", remote_components]
+        if job_id:
+            add_log(job_id, f"yt-dlp 启用远程组件：{remote_components}")
+
+    user_agent = (os.getenv("YTDLP_USER_AGENT") or "").strip()
+    if user_agent:
+        args += ["--user-agent", user_agent]
+    if truthy_env("YTDLP_FORCE_IPV4"):
+        args += ["--force-ipv4"]
+    args += env_cli_args("YTDLP_EXTRA_ARGS")
+    return args, has_auth
+
+
+def yt_dlp_failure_hint(url: str, tail: str, youtube_auth_used: bool = False) -> str:
+    if not is_youtube_url(url):
+        if "Sign in to confirm" in tail or "not a bot" in tail:
+            return "\n\n提示：站点触发了反机器人校验，请更新 cookies。"
+        return ""
+    hints: list[str] = []
+    if "No supported JavaScript runtime" in tail:
+        hints.append("当前环境缺少 deno/node/qjs/bun。请重跑部署脚本或安装 Deno >= 2.3.0；项目也会把检测到的 runtime 显式传给 yt-dlp。")
+    if "Sign in to confirm" in tail or "not a bot" in tail:
+        if youtube_auth_used:
+            hints.append("YouTube 仍要求登录/真人确认，通常是 cookies 过期、导出账号未通过验证，或 cookies 与服务器出口 IP 不匹配；请重新导出 Netscape cookies 到 data/cookies/youtube.txt。")
+        else:
+            hints.append("YouTube 在 VPS/机房 IP 上触发反机器人校验；公开视频也可能必须提供登录态。请把 Netscape cookies 放到 data/cookies/youtube.txt，或设置 YOUTUBE_COOKIE_FILE。")
+    if "HTTP Error 429" in tail or "Too Many Requests" in tail:
+        hints.append("YouTube 限制了当前出口 IP；请降低频率、换出口 IP/代理，或用同一出口 IP 完成人机验证后重新导出 cookies。")
+    if not hints:
+        hints.append("建议确认 yt-dlp 已升级为 yt-dlp[default]、已安装 JS runtime，并配置可用 YouTube cookies。")
+    return "\n\n提示：\n- " + "\n- ".join(hints)
+
+
+def cobalt_headers() -> tuple[dict[str, str], str | None]:
+    headers = {"Accept": "application/json", "Content-Type": "application/json"}
+    bearer = (os.getenv("COBALT_BEARER_TOKEN") or os.getenv("COBALT_JWT") or "").strip()
+    api_key = (os.getenv("COBALT_API_KEY") or "").strip()
+    if bearer:
+        headers["Authorization"] = f"Bearer {bearer}"
+        return headers, "Bearer"
+    if api_key:
+        headers["Authorization"] = f"Api-Key {api_key}"
+        return headers, "Api-Key"
+    return headers, None
+
+
+def cobalt_auth_hint(api_base: str, detail: str = "") -> str:
+    if "api.cobalt.tools" in api_base:
+        return (
+            "Cobalt 公共 hosted API 启用了 bot protection，官方文档也说明它不适合未经许可直接接入第三方项目。"
+            "请改用自建 Cobalt API，或配置实例所有者提供的 COBALT_API_KEY / COBALT_BEARER_TOKEN。"
+        )
+    if "api.auth.jwt.missing" in detail or "auth.jwt.missing" in detail:
+        return "该 Cobalt 实例要求 Bearer/JWT 鉴权，请配置 COBALT_BEARER_TOKEN，或改用支持 Api-Key/免鉴权的自建实例。"
+    if "api.auth" in detail:
+        return "该 Cobalt 实例要求鉴权，请按实例配置提供 COBALT_API_KEY 或 COBALT_BEARER_TOKEN。"
+    return ""
 
 
 def now_iso() -> str:
@@ -228,13 +397,14 @@ def clean_vtt_to_text(raw: str) -> str:
 
 
 async def get_youtube_transcript_ytdlp(url: str, job_dir: Path, job_id: str | None = None) -> str | None:
-    yt_dlp_bin = Path(sys.executable).parent / ("yt-dlp.exe" if os.name == "nt" else "yt-dlp")
-    if not yt_dlp_bin.exists():
+    yt_dlp_bin = yt_dlp_executable()
+    if not yt_dlp_bin:
         return None
-    cookie = youtube_cookie_file()
     outtmpl = str(job_dir / "yt_sub.%(ext)s")
+    yt_args, _ = youtube_ytdlp_args(job_id)
     cmd = [
         str(yt_dlp_bin),
+        *yt_args,
         "--skip-download",
         "--ignore-no-formats-error",
         "--write-subs",
@@ -245,10 +415,6 @@ async def get_youtube_transcript_ytdlp(url: str, job_dir: Path, job_id: str | No
         "-o", outtmpl,
         url,
     ]
-    if cookie.exists():
-        cmd[1:1] = ["--cookies", str(cookie)]
-        if job_id:
-            add_log(job_id, "检测到 YouTube cookies 文件，抓字幕时将携带 cookies。")
     try:
         await run_cmd(cmd, job_dir)
     except Exception as e:
@@ -320,21 +486,24 @@ async def get_youtube_transcript(url: str) -> str | None:
 
 async def download_audio_via_cobalt(url: str, job_dir: Path, job_id: str | None = None) -> Path:
     api_base = (os.getenv("COBALT_API_BASE") or "https://api.cobalt.tools").rstrip("/")
-    api_key = (os.getenv("COBALT_API_KEY") or "").strip()
-    headers = {"Accept": "application/json", "Content-Type": "application/json"}
-    if api_key:
-        headers["Authorization"] = f"Api-Key {api_key}"
+    headers, auth_kind = cobalt_headers()
     payload = {"url": url, "downloadMode": "audio", "audioFormat": "mp3", "audioBitrate": "128", "filenameStyle": "basic", "disableMetadata": True, "alwaysProxy": True}
     if job_id:
-        add_log(job_id, f"yt-dlp 失败，尝试第三方 Cobalt 下载：{api_base}")
+        add_log(job_id, f"yt-dlp 失败，尝试第三方 Cobalt 下载：{api_base}（鉴权：{auth_kind or '未配置'}）")
         set_job(job_id, stage="第三方下载", download_status="请求 Cobalt API")
+    if "api.cobalt.tools" in api_base and not auth_kind:
+        raise RuntimeError(cobalt_auth_hint(api_base))
     async with httpx.AsyncClient(timeout=600, follow_redirects=True) as client:
         r = await client.post(api_base + "/", headers=headers, json=payload)
         if r.status_code >= 400:
-            raise RuntimeError(f"Cobalt API 请求失败：HTTP {r.status_code} {r.text[:500]}")
+            detail = r.text[:500]
+            hint = cobalt_auth_hint(api_base, detail)
+            raise RuntimeError(f"Cobalt API 请求失败：HTTP {r.status_code} {detail}" + (f"\n{hint}" if hint else ""))
         data = r.json()
         if data.get("status") == "error":
-            raise RuntimeError(f"Cobalt API 返回错误：{json.dumps(data.get('error'), ensure_ascii=False)}")
+            detail = json.dumps(data.get("error"), ensure_ascii=False)
+            hint = cobalt_auth_hint(api_base, detail)
+            raise RuntimeError(f"Cobalt API 返回错误：{detail}" + (f"\n{hint}" if hint else ""))
         dl_url = data.get("url") or data.get("audio")
         if not dl_url:
             raise RuntimeError(f"Cobalt API 未返回可下载 URL：{json.dumps(data, ensure_ascii=False)[:800]}")
@@ -365,24 +534,23 @@ async def download_audio_via_cobalt(url: str, job_dir: Path, job_id: str | None 
 
 async def download_audio(url: str, job_dir: Path, job_id: str | None = None) -> Path:
     outtmpl = str(job_dir / "audio.%(ext)s")
-    yt_dlp_bin = Path(sys.executable).parent / ("yt-dlp.exe" if os.name == "nt" else "yt-dlp")
-    if not yt_dlp_bin.exists():
-        raise RuntimeError(f"未找到 yt-dlp 可执行文件：{yt_dlp_bin}，请确认已在虚拟环境安装 yt-dlp。")
+    yt_dlp_bin = yt_dlp_executable()
+    if not yt_dlp_bin:
+        raise RuntimeError("未找到 yt-dlp 可执行文件，请确认已在虚拟环境或 PATH 中安装 yt-dlp。")
     bilibili_cookie = bilibili_cookie_file()
-    youtube_cookie = youtube_cookie_file()
+    youtube_auth_used = False
     cmd = [
         str(yt_dlp_bin),
         "--newline",
         "--progress-template", "download:%(progress._percent_str)s %(progress._speed_str)s ETA %(progress._eta_str)s",
     ]
-    if ("bilibili.com" in url or "b23.tv" in url) and bilibili_cookie.exists():
+    if is_bilibili_url(url) and bilibili_cookie.exists():
         cmd += ["--cookies", str(bilibili_cookie)]
         if job_id:
             add_log(job_id, "检测到 B 站 cookies 文件，下载音频时将携带 cookies。")
-    if ("youtube.com" in url or "youtu.be" in url) and youtube_cookie.exists():
-        cmd += ["--cookies", str(youtube_cookie)]
-        if job_id:
-            add_log(job_id, "检测到 YouTube cookies 文件，下载音频时将携带 cookies。")
+    if is_youtube_url(url):
+        yt_args, youtube_auth_used = youtube_ytdlp_args(job_id)
+        cmd += yt_args
     cmd += [
         "-x", "--audio-format", "mp3", "--audio-quality", "5",
         "--no-playlist", "-o", outtmpl, url,
@@ -417,14 +585,12 @@ async def download_audio(url: str, job_dir: Path, job_id: str | None = None) -> 
     rc = await proc.wait()
     if rc != 0:
         tail = "\n".join(lines[-20:])
-        if "youtube.com" in url or "youtu.be" in url:
+        hint = yt_dlp_failure_hint(url, tail, youtube_auth_used)
+        if is_youtube_url(url):
             try:
                 return await download_audio_via_cobalt(url, job_dir, job_id)
             except Exception as ce:
-                raise RuntimeError(f"音频下载失败，yt-dlp 返回 {rc}：\n{tail}\n\n第三方下载也失败：{ce}")
-        hint = ""
-        if "Sign in to confirm" in tail or "not a bot" in tail:
-            hint = "\n\n提示：站点触发了反机器人校验，请更新 cookies。"
+                raise RuntimeError(f"音频下载失败，yt-dlp 返回 {rc}：\n{tail}{hint}\n\n第三方下载也失败：{ce}")
         raise RuntimeError(f"音频下载失败，yt-dlp 返回 {rc}：\n{tail}{hint}")
     files = list(job_dir.glob("audio.*"))
     if not files:
@@ -594,7 +760,7 @@ async def process(job_id: str, url: str, prompt_name: str, custom_prompt: str | 
             add_log(job_id, f"字幕缓存未命中：MD5={cache_hash_for(url)}。")
 
         set_job(job_id, progress=10, stage="获取字幕")
-        is_bilibili = "bilibili.com" in url or "b23.tv" in url
+        is_bilibili = is_bilibili_url(url)
         transcript = None
         if start_mode == "audio":
             add_log(job_id, "按选择从『下载音频』开始，跳过直接字幕获取。")
@@ -611,7 +777,7 @@ async def process(job_id: str, url: str, prompt_name: str, custom_prompt: str | 
                 transcript = None
 
         audio_path = None
-        if not transcript and ("youtube.com" in url or "youtu.be" in url) and start_mode != "audio":
+        if not transcript and is_youtube_url(url) and start_mode != "audio":
             add_log(job_id, "YouTube 字幕获取失败，尝试下载音频后用 Whisper 转写。")
         if not transcript:
             if not url:

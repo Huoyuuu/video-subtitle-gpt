@@ -29,6 +29,43 @@ def test_cookie_file_env_override(monkeypatch, tmp_path):
     assert m.bilibili_cookie_file() == (m.BASE_DIR / "data/cookies/bilibili.txt").resolve()
 
 
+def test_youtube_ytdlp_args_include_cookie_and_runtime(monkeypatch, tmp_path):
+    import app.main as m
+    cookie = tmp_path / "youtube.txt"
+    cookie.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+    monkeypatch.setenv("YOUTUBE_COOKIE_FILE", str(cookie))
+    monkeypatch.setenv("YTDLP_JS_RUNTIME", "deno:/usr/local/bin/deno")
+    args, has_auth = m.youtube_ytdlp_args()
+    assert has_auth is True
+    assert "--cookies" in args
+    assert str(cookie.resolve()) in args
+    assert "deno:/usr/local/bin/deno" in args
+
+
+def test_youtube_failure_hint_mentions_cookie_and_runtime():
+    import app.main as m
+    tail = "WARNING: No supported JavaScript runtime could be found\nERROR: Sign in to confirm you’re not a bot"
+    hint = m.yt_dlp_failure_hint("https://www.youtube.com/watch?v=abcdefghijk", tail, youtube_auth_used=False)
+    assert "Deno" in hint
+    assert "cookies" in hint
+
+
+def test_cobalt_headers_prefer_bearer(monkeypatch):
+    import app.main as m
+    monkeypatch.setenv("COBALT_BEARER_TOKEN", "jwt-token")
+    monkeypatch.setenv("COBALT_API_KEY", "api-key")
+    headers, kind = m.cobalt_headers()
+    assert kind == "Bearer"
+    assert headers["Authorization"] == "Bearer jwt-token"
+
+
+def test_cobalt_public_api_hint():
+    import app.main as m
+    hint = m.cobalt_auth_hint("https://api.cobalt.tools", '{"code":"error.api.auth.jwt.missing"}')
+    assert "公共 hosted API" in hint
+    assert "COBALT" in hint
+
+
 def test_cleanup_storage_removes_oldest_when_over_limit(monkeypatch):
     JOBS_DIR.mkdir(parents=True, exist_ok=True)
     a = JOBS_DIR / "old"

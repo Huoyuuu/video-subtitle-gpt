@@ -22,9 +22,17 @@ uvicorn app.main:app --host 0.0.0.0 --port 18004 --reload
 
 在 `.env` 中至少填写 `OPENAI_API_KEY`；如需音频转写，可填写 `GROQ_API_KEY`。
 
-## Cookie（可选）
+## YouTube 依赖与 Cookie
 
-将 Netscape `cookies.txt` 放到 `data/cookies/youtube.txt` / `data/cookies/bilibili.txt`；
+YouTube 在 VPS/机房 IP 上经常要求 JS challenge 和登录态。部署脚本会自动安装 Deno，
+`requirements.txt` 使用 `yt-dlp[default]`，应用会把检测到的 JS runtime 显式传给 yt-dlp。
+
+若日志出现 `Sign in to confirm you’re not a bot`，需要将 Netscape `cookies.txt`
+放到 `data/cookies/youtube.txt`；B 站 cookie 可放到 `data/cookies/bilibili.txt`。
 也可在 `.env` 设置 `YOUTUBE_COOKIE_FILE`、`BILIBILI_COOKIE_FILE` 指向文件。
+
+`api.cobalt.tools` 公共 hosted API 需要鉴权/人机校验，不再适合作为免配置后端备用；
+如需 Cobalt 备用下载，请配置自建实例 `COBALT_API_BASE` 以及对应的
+`COBALT_API_KEY` 或 `COBALT_BEARER_TOKEN`。
 
 欢迎 Issue 和 PR：Bug 修复、站点适配、UI 优化、部署文档改进都可以。
