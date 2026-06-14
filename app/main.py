@@ -31,6 +31,7 @@ TRANSCRIPTS_DIR = DATA_DIR / "transcripts"
 DB_PATH = DATA_DIR / "app.sqlite3"
 MAX_STORAGE_BYTES = int(os.getenv("MAX_STORAGE_BYTES", str(1024**3)))
 JOB_TTL_HOURS = int(os.getenv("JOB_TTL_HOURS", "24"))
+MAX_JOB_COOKIE_BYTES = int(os.getenv("MAX_JOB_COOKIE_BYTES", str(256 * 1024)))
 
 JOBS_DIR.mkdir(parents=True, exist_ok=True)
 PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -113,7 +114,69 @@ def non_empty_file(path: Path) -> bool:
         return False
 
 
-def youtube_cookie_args(job_id: str | None = None) -> tuple[list[str], bool]:
+def normalize_youtube_cookie_text(raw: str) -> str:
+    text = (raw or "").strip()
+    if not text:
+        return ""
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    has_netscape_rows = any(
+        not line.startswith("#") and "\t" in line and len(line.split("\t")) >= 7
+        for line in lines
+    )
+    if has_netscape_rows:
+        content = text.replace("\r\n", "\n").replace("\r", "\n").strip() + "\n"
+        if "Netscape HTTP Cookie File" not in content.splitlines()[0]:
+            content = "# Netscape HTTP Cookie File\n" + content
+        return content
+
+    cookie_text = "\n".join(lines)
+    cookie_text = re.sub(r"(?is)^\s*cookie\s*:\s*", "", cookie_text).strip()
+    chunks = re.split(r"[;\n]+", cookie_text)
+    rows = ["# Netscape HTTP Cookie File"]
+    for chunk in chunks:
+        if "=" not in chunk:
+            continue
+        name, value = chunk.split("=", 1)
+        name = name.strip()
+        value = value.strip()
+        if not name:
+            continue
+        rows.append("\t".join([".youtube.com", "TRUE", "/", "TRUE", "1893456000", name, value]))
+    if len(rows) == 1:
+        raise ValueError("Cookie 格式无法识别，请粘贴 Netscape cookies.txt 或浏览器 Cookie 头。")
+    return "\n".join(rows) + "\n"
+
+
+def write_job_youtube_cookie(job_dir: Path, raw: str) -> Path | None:
+    text = normalize_youtube_cookie_text(raw)
+    if not text:
+        return None
+    size = len(text.encode("utf-8"))
+    if size > MAX_JOB_COOKIE_BYTES:
+        raise ValueError(f"YouTube Cookie 太大，当前限制 {MAX_JOB_COOKIE_BYTES} bytes。")
+    path = job_dir / "youtube-cookies.txt"
+    path.write_text(text, encoding="utf-8", newline="\n")
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+    return path
+
+
+def remove_job_youtube_cookie(job_dir: Path):
+    try:
+        (job_dir / "youtube-cookies.txt").unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def youtube_cookie_args(job_id: str | None = None, cookie_file: Path | None = None) -> tuple[list[str], bool]:
+    if cookie_file and non_empty_file(cookie_file):
+        if job_id:
+            add_log(job_id, "使用本次任务提交的 YouTube cookie，yt-dlp 将优先携带该 cookie。")
+        return ["--cookies", str(cookie_file)], True
+
     cookie = youtube_cookie_file()
     browser = (os.getenv("YOUTUBE_COOKIES_FROM_BROWSER") or "").strip()
     if non_empty_file(cookie):
@@ -161,10 +224,10 @@ def yt_dlp_js_runtime_args(job_id: str | None = None) -> list[str]:
     return ["--js-runtimes", mode]
 
 
-def youtube_ytdlp_args(job_id: str | None = None) -> tuple[list[str], bool]:
+def youtube_ytdlp_args(job_id: str | None = None, cookie_file: Path | None = None) -> tuple[list[str], bool]:
     args: list[str] = []
     args += yt_dlp_js_runtime_args(job_id)
-    cookie_args, has_auth = youtube_cookie_args(job_id)
+    cookie_args, has_auth = youtube_cookie_args(job_id, cookie_file)
     args += cookie_args
 
     remote_components = (os.getenv("YTDLP_REMOTE_COMPONENTS") or "").strip()
@@ -396,12 +459,17 @@ def clean_vtt_to_text(raw: str) -> str:
     return "\n".join(lines)
 
 
-async def get_youtube_transcript_ytdlp(url: str, job_dir: Path, job_id: str | None = None) -> str | None:
+async def get_youtube_transcript_ytdlp(
+    url: str,
+    job_dir: Path,
+    job_id: str | None = None,
+    youtube_cookie_file: Path | None = None,
+) -> str | None:
     yt_dlp_bin = yt_dlp_executable()
     if not yt_dlp_bin:
         return None
     outtmpl = str(job_dir / "yt_sub.%(ext)s")
-    yt_args, _ = youtube_ytdlp_args(job_id)
+    yt_args, _ = youtube_ytdlp_args(job_id, youtube_cookie_file)
     cmd = [
         str(yt_dlp_bin),
         *yt_args,
@@ -532,7 +600,12 @@ async def download_audio_via_cobalt(url: str, job_dir: Path, job_id: str | None 
         return out
 
 
-async def download_audio(url: str, job_dir: Path, job_id: str | None = None) -> Path:
+async def download_audio(
+    url: str,
+    job_dir: Path,
+    job_id: str | None = None,
+    youtube_cookie_file: Path | None = None,
+) -> Path:
     outtmpl = str(job_dir / "audio.%(ext)s")
     yt_dlp_bin = yt_dlp_executable()
     if not yt_dlp_bin:
@@ -549,7 +622,7 @@ async def download_audio(url: str, job_dir: Path, job_id: str | None = None) -> 
         if job_id:
             add_log(job_id, "检测到 B 站 cookies 文件，下载音频时将携带 cookies。")
     if is_youtube_url(url):
-        yt_args, youtube_auth_used = youtube_ytdlp_args(job_id)
+        yt_args, youtube_auth_used = youtube_ytdlp_args(job_id, youtube_cookie_file)
         cmd += yt_args
     cmd += [
         "-x", "--audio-format", "mp3", "--audio-quality", "5",
@@ -737,12 +810,28 @@ async def summarize_transcript(job_id: str, url: str, transcript: str, prompt_na
     set_job(job_id, status="done", progress=100, stage="完成", result=result, result_url=f"/download/{job_id}/result.md", title=title_from_url(url))
 
 
-async def process(job_id: str, url: str, prompt_name: str, custom_prompt: str | None, start_mode: str = "auto", manual_transcript: str = "", use_cache: bool = True):
+async def process(
+    job_id: str,
+    url: str,
+    prompt_name: str,
+    custom_prompt: str | None,
+    start_mode: str = "auto",
+    manual_transcript: str = "",
+    use_cache: bool = True,
+    youtube_cookie: str = "",
+):
     job_dir = JOBS_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     url = normalize_url(url)
+    job_youtube_cookie_file: Path | None = None
     try:
         cleanup_storage()
+        if youtube_cookie.strip():
+            if not is_youtube_url(url):
+                add_log(job_id, "已填写 YouTube cookie，但当前链接不是 YouTube，已忽略。")
+            else:
+                job_youtube_cookie_file = write_job_youtube_cookie(job_dir, youtube_cookie)
+                add_log(job_id, "已接收本次任务的 YouTube cookie。")
         set_job(job_id, status="running", progress=5, stage="准备", url_hash=cache_hash_for(url) if url else None)
         if start_mode == "summary":
             add_log(job_id, "按选择从『已有字幕 → GPT 总结』开始。")
@@ -772,7 +861,7 @@ async def process(job_id: str, url: str, prompt_name: str, custom_prompt: str | 
                 transcript = await get_youtube_transcript(url)
                 if not transcript:
                     add_log(job_id, "YouTube Transcript API 未拿到字幕，改用 yt-dlp 抓字幕文件。")
-                    transcript = await get_youtube_transcript_ytdlp(url, job_dir, job_id)
+                    transcript = await get_youtube_transcript_ytdlp(url, job_dir, job_id, job_youtube_cookie_file)
             else:
                 transcript = None
 
@@ -784,7 +873,7 @@ async def process(job_id: str, url: str, prompt_name: str, custom_prompt: str | 
                 raise RuntimeError("没有视频链接，无法下载音频。若已有字幕，请选择『已有字幕 → 只跑总结』。")
             set_job(job_id, progress=30, stage="下载音频")
             add_log(job_id, "直接字幕不可用，开始用 yt-dlp 下载音频。")
-            audio_path = await download_audio(url, job_dir, job_id)
+            audio_path = await download_audio(url, job_dir, job_id, job_youtube_cookie_file)
             set_job(job_id, audio_url=f"/download/{job_id}/{audio_path.name}")
             set_job(job_id, progress=55, stage="Whisper 转写")
             try:
@@ -796,6 +885,8 @@ async def process(job_id: str, url: str, prompt_name: str, custom_prompt: str | 
         await summarize_transcript(job_id, url, transcript, prompt_name, custom_prompt, "youtube" if "youtu" in url else "whisper")
     except Exception as e:
         set_job(job_id, status="error", progress=100, stage="失败", message=str(e))
+    finally:
+        remove_job_youtube_cookie(job_dir)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -818,6 +909,7 @@ async def create_job(
     start_mode: str = Form("auto"),
     manual_transcript: str = Form(""),
     use_cache: str = Form("true"),
+    youtube_cookie: str = Form(""),
 ):
     if start_mode != "summary" and not normalize_url(url):
         raise HTTPException(400, "请填写视频链接，或选择『已有字幕 → 只跑总结』。")
@@ -840,7 +932,7 @@ async def create_job(
         "logs": [],
         "retry_count": 0,
     }
-    asyncio.create_task(process(job_id, url, prompt_name, custom_prompt, start_mode, manual_transcript, truthy(use_cache)))
+    asyncio.create_task(process(job_id, url, prompt_name, custom_prompt, start_mode, manual_transcript, truthy(use_cache), youtube_cookie))
     return {"job_id": job_id}
 
 
@@ -903,6 +995,8 @@ async def submit_transcript(job_id: str, transcript: str = Form(...), prompt_nam
 
 @app.get("/download/{job_id}/{filename}")
 async def download(job_id: str, filename: str):
+    if "cookie" in filename.lower():
+        raise HTTPException(404, "file not found")
     p = JOBS_DIR / job_id / filename
     if not p.exists() or not p.is_file():
         raise HTTPException(404, "file not found")

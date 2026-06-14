@@ -179,6 +179,13 @@
           <textarea name="manual_transcript" id="manualTranscript" rows="5" class="textarea text-sm"
             placeholder="粘贴字幕文本…"></textarea>
         </div>
+        <div class="md:col-span-2">
+          <label class="block text-xs font-bold text-stone-500 mb-1.5">YouTube Cookie（可选，本次任务）</label>
+          <textarea name="youtube_cookie" id="youtubeCookie" rows="4" class="textarea text-sm font-mono"
+            autocomplete="off" autocapitalize="off" spellcheck="false"
+            placeholder="粘贴 Netscape cookies.txt，或浏览器请求头里的 Cookie: SID=...; HSID=..."></textarea>
+          <p class="text-xs text-stone-400 mt-1.5">仅当前任务临时使用，处理结束后会从任务目录删除。</p>
+        </div>
       </div>
     </form>
   </section>
@@ -378,6 +385,7 @@ $('jobForm').onsubmit = async e => {
       return;
     }
     jobId = (await r.json()).job_id;
+    $('youtubeCookie').value = '';
     showEl('currentJobSection');
     showEl('emptyState', false);
     clearInterval(pollTimer);

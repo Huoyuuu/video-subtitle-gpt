@@ -66,7 +66,7 @@ async def test_cache_hit_skips_transcription(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_audio_ready_when_whisper_fails(monkeypatch, tmp_path):
-    async def fake_download_audio(url, job_dir, job_id=None):
+    async def fake_download_audio(url, job_dir, job_id=None, youtube_cookie_file=None):
         p = job_dir / "audio.mp3"
         p.write_bytes(b"fake mp3")
         return p
@@ -89,6 +89,50 @@ async def test_audio_ready_when_whisper_fails(monkeypatch, tmp_path):
             await asyncio.sleep(0.1)
         assert final["status"] == "audio_ready"
         assert final["audio_url"].endswith("audio.mp3")
+
+
+@pytest.mark.asyncio
+async def test_youtube_cookie_from_form_is_used_temporarily(monkeypatch):
+    async def fake_get_youtube_transcript(url):
+        return None
+
+    async def fake_get_youtube_transcript_ytdlp(url, job_dir, job_id=None, youtube_cookie_file=None):
+        assert youtube_cookie_file is not None
+        assert youtube_cookie_file.exists()
+        text = youtube_cookie_file.read_text(encoding="utf-8")
+        assert "\tSID\tabc" in text
+        assert "\tHSID\tdef" in text
+        return "cookie 字幕"
+
+    async def fake_call_gpt(prompt, transcript, job_id=None):
+        return "cookie 总结：" + transcript
+
+    monkeypatch.setattr(m, "get_youtube_transcript", fake_get_youtube_transcript)
+    monkeypatch.setattr(m, "get_youtube_transcript_ytdlp", fake_get_youtube_transcript_ytdlp)
+    monkeypatch.setattr(m, "call_gpt", fake_call_gpt)
+
+    async with AsyncClient(transport=ASGITransport(app=m.app), base_url="http://test") as client:
+        r = await client.post(
+            "/api/jobs",
+            data={
+                "url": "https://www.youtube.com/watch?v=abcdefghijk",
+                "prompt_name": "default",
+                "start_mode": "auto",
+                "youtube_cookie": "Cookie: SID=abc; HSID=def",
+            },
+        )
+        assert r.status_code == 200
+        job_id = r.json()["job_id"]
+        final = None
+        for _ in range(30):
+            final = (await client.get(f"/api/jobs/{job_id}")).json()
+            if final["status"] == "done":
+                break
+            await asyncio.sleep(0.1)
+        assert final["status"] == "done"
+        assert "youtube_cookie" not in final
+        assert "cookie 总结" in final["result"]
+        assert not (m.JOBS_DIR / job_id / "youtube-cookies.txt").exists()
 
 
 @pytest.mark.asyncio

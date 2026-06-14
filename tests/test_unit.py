@@ -42,6 +42,29 @@ def test_youtube_ytdlp_args_include_cookie_and_runtime(monkeypatch, tmp_path):
     assert "deno:/usr/local/bin/deno" in args
 
 
+def test_cookie_header_normalized_to_netscape():
+    import app.main as m
+    text = m.normalize_youtube_cookie_text("Cookie: SID=abc; HSID=def; __Secure-3PSID=ghi")
+    assert text.startswith("# Netscape HTTP Cookie File")
+    assert ".youtube.com\tTRUE\t/\tTRUE\t1893456000\tSID\tabc" in text
+    assert ".youtube.com\tTRUE\t/\tTRUE\t1893456000\tHSID\tdef" in text
+    assert "__Secure-3PSID\tghi" in text
+
+
+def test_job_cookie_file_overrides_global_cookie(monkeypatch, tmp_path):
+    import app.main as m
+    global_cookie = tmp_path / "global.txt"
+    job_cookie = tmp_path / "job.txt"
+    global_cookie.write_text("# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t1893456000\tSID\tglobal\n", encoding="utf-8")
+    job_cookie.write_text("# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t1893456000\tSID\tjob\n", encoding="utf-8")
+    monkeypatch.setenv("YOUTUBE_COOKIE_FILE", str(global_cookie))
+    monkeypatch.setenv("YTDLP_JS_RUNTIME", "deno:/usr/local/bin/deno")
+    args, has_auth = m.youtube_ytdlp_args(cookie_file=job_cookie)
+    assert has_auth is True
+    assert str(job_cookie) in args
+    assert str(global_cookie) not in args
+
+
 def test_youtube_failure_hint_mentions_cookie_and_runtime():
     import app.main as m
     tail = "WARNING: No supported JavaScript runtime could be found\nERROR: Sign in to confirm you’re not a bot"
