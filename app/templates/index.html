@@ -8,12 +8,23 @@
 <script src="https://unpkg.com/lucide@latest"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Serif+SC:wght@600;700&display=swap');
   * { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
-  body { min-height: 100vh; background: #f5f4f0; color: #1c1917; }
+  body {
+    min-height: 100vh; color: #1c1917;
+    background-color: #f6f4ef;
+    background-image: radial-gradient(#e7e2d8 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+  .font-serif { font-family: 'Noto Serif SC', ui-serif, Georgia, serif; }
+
+  /* micro-interactions */
+  .press { transition: transform .12s ease, background-color .15s ease, box-shadow .2s ease, border-color .2s ease; }
+  .press:active { transform: translateY(1px) scale(.99); }
+  .lift { transition: transform .18s cubic-bezier(.2,.7,.2,1), box-shadow .2s ease, border-color .2s ease; }
 
   /* cards */
-  .card { background: #fff; border: 1px solid #e7e2d8; border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
+  .card { background: #fcfbf8; border: 1px solid #e4decf; border-radius: 18px; box-shadow: 0 1px 2px rgba(38,34,28,.04), 0 6px 18px rgba(38,34,28,.05); }
 
   /* step indicator */
   .step-dot { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: .8rem; flex-shrink: 0; }
@@ -24,7 +35,8 @@
   .step-line.done { background: #16a34a; }
 
   /* buttons */
-  .btn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; border-radius: 10px; padding: .6rem 1rem; font-weight: 700; font-size: .9rem; transition: .15s; cursor: pointer; border: none; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; border-radius: 10px; padding: .6rem 1rem; font-weight: 700; font-size: .9rem; transition: transform .12s ease, background-color .15s ease, border-color .15s ease, color .15s ease; cursor: pointer; border: none; }
+  .btn:active:not(:disabled) { transform: translateY(1px) scale(.99); }
   .btn:disabled { opacity: .5; cursor: not-allowed; }
   .btn-primary { background: #1c1917; color: #fff; }
   .btn-primary:hover:not(:disabled) { background: #292524; }
@@ -101,9 +113,10 @@
   @keyframes fadeIn { from { opacity:0; transform:translateY(6px) } to { opacity:1; transform:none } }
 
   /* scrollbar */
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: #f1ede3; border-radius: 10px; }
-  ::-webkit-scrollbar-thumb { background: #c9bfae; border-radius: 10px; }
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #ded7c5; border-radius: 10px; border: 2px solid #f6f4ef; }
+  ::-webkit-scrollbar-thumb:hover { background: #cdc4ad; }
 
   /* spinner */
   @keyframes spin { to { transform: rotate(360deg) } }
@@ -115,13 +128,16 @@
 <body>
 
 <!-- Header -->
-<header class="border-b border-stone-200 bg-white/80 backdrop-blur sticky top-0 z-10">
-  <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-    <div class="flex items-center gap-2">
-      <i data-lucide="video" class="w-5 h-5 text-amber-600"></i>
-      <span class="font-black text-lg tracking-tight">Video Subtitle GPT</span>
-    </div>
-    <span class="text-sm text-stone-500 font-medium">智能视频字幕提取与 AI 总结</span>
+<header class="border-b border-[#e4decf] bg-[#fcfbf8]/80 backdrop-blur-md sticky top-0 z-10">
+  <div class="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
+    <span class="grid place-items-center w-9 h-9 rounded-xl bg-[#1c1917] text-amber-300 shadow-sm press">
+      <i data-lucide="captions" class="w-5 h-5"></i>
+    </span>
+    <span class="font-serif text-lg font-bold tracking-tight leading-none">Video Subtitle GPT</span>
+    <span class="ml-auto hidden sm:inline-flex items-center gap-1.5 text-xs text-stone-500 bg-white border border-[#e4decf] rounded-full px-3 py-1.5 shadow-sm">
+      <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-500"></i>
+      智能字幕提取与 AI 总结
+    </span>
   </div>
 </header>
 
@@ -131,7 +147,7 @@
   <section class="card p-5 fade-in">
     <div class="flex items-center gap-2 mb-4">
       <i data-lucide="plus-circle" class="w-5 h-5 text-amber-600"></i>
-      <h2 class="font-black text-base">新建任务</h2>
+      <h2 class="font-serif font-bold text-base">新建任务</h2>
     </div>
 
     <form id="jobForm" class="space-y-4">
@@ -195,7 +211,7 @@
     <div class="flex items-center justify-between mb-4">
       <div class="flex items-center gap-2">
         <i data-lucide="activity" class="w-5 h-5 text-amber-600"></i>
-        <h2 class="font-black text-base">当前任务</h2>
+        <h2 class="font-serif font-bold text-base">当前任务</h2>
       </div>
       <div class="flex items-center gap-2">
         <span id="statusBadge" class="badge badge-idle">idle</span>
@@ -287,10 +303,12 @@
       </section>
 
       <!-- 空状态提示 -->
-      <div id="emptyState" class="card p-10 text-center fade-in">
-        <i data-lucide="video" class="w-10 h-10 text-stone-300 mx-auto mb-3"></i>
-        <p class="text-stone-400 font-semibold">粘贴链接，点击「开始」即可处理</p>
-        <p class="text-stone-300 text-sm mt-1">或从左侧历史记录中选择一条查看</p>
+      <div id="emptyState" class="card p-12 text-center fade-in">
+        <span class="grid place-items-center w-14 h-14 mx-auto mb-4 rounded-2xl bg-[#f1eee5] text-stone-400">
+          <i data-lucide="clapperboard" class="w-7 h-7"></i>
+        </span>
+        <p class="font-serif font-bold text-stone-600 text-base">粘贴链接，点击「开始」即可处理</p>
+        <p class="text-stone-400 text-sm mt-1.5">或从左侧历史记录中选择一条查看</p>
       </div>
 
     </div>
