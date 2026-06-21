@@ -148,20 +148,28 @@ def normalize_youtube_cookie_text(raw: str) -> str:
     return "\n".join(rows) + "\n"
 
 
-def write_job_youtube_cookie(job_dir: Path, raw: str) -> Path | None:
+def write_youtube_cookie_file(path: Path, raw: str) -> Path | None:
     text = normalize_youtube_cookie_text(raw)
     if not text:
         return None
     size = len(text.encode("utf-8"))
     if size > MAX_JOB_COOKIE_BYTES:
         raise ValueError(f"YouTube Cookie 太大，当前限制 {MAX_JOB_COOKIE_BYTES} bytes。")
-    path = job_dir / "youtube-cookies.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8", newline="\n")
     try:
         path.chmod(0o600)
     except OSError:
         pass
     return path
+
+
+def write_job_youtube_cookie(job_dir: Path, raw: str) -> Path | None:
+    return write_youtube_cookie_file(job_dir / "youtube-cookies.txt", raw)
+
+
+def save_global_youtube_cookie(raw: str) -> Path | None:
+    return write_youtube_cookie_file(youtube_cookie_file(), raw)
 
 
 def remove_job_youtube_cookie(job_dir: Path):
@@ -845,7 +853,10 @@ async def process(
                 add_log(job_id, "已填写 YouTube cookie，但当前链接不是 YouTube，已忽略。")
             else:
                 job_youtube_cookie_file = write_job_youtube_cookie(job_dir, youtube_cookie)
-                add_log(job_id, "已接收本次任务的 YouTube cookie。")
+                global_cookie_file = save_global_youtube_cookie(youtube_cookie)
+                add_log(job_id, "已接收本次任务的 YouTube cookie，并已保存为全局 cookies，后续任务会自动使用。")
+                if global_cookie_file:
+                    add_log(job_id, f"全局 YouTube cookies 文件：{global_cookie_file}")
         set_job(job_id, status="running", progress=5, stage="准备", url_hash=cache_hash_for(url) if url else None)
         if start_mode == "summary":
             add_log(job_id, "按选择从『已有字幕 → GPT 总结』开始。")

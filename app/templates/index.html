@@ -199,11 +199,11 @@
             placeholder="粘贴字幕文本…"></textarea>
         </div>
         <div class="md:col-span-2">
-          <label class="block text-xs font-bold text-stone-500 mb-1.5">YouTube Cookie（可选，本次任务）</label>
+          <label class="block text-xs font-bold text-stone-500 mb-1.5">YouTube Cookie（可选，提交后保存复用）</label>
           <textarea name="youtube_cookie" id="youtubeCookie" rows="4" class="textarea text-sm font-mono"
             autocomplete="off" autocapitalize="off" spellcheck="false"
             placeholder="粘贴 Netscape cookies.txt，或浏览器请求头里的 Cookie: SID=…; HSID=…"></textarea>
-          <p class="text-xs text-stone-400 mt-1.5">仅当前任务临时使用，处理结束后会从任务目录删除。</p>
+          <p class="text-xs text-stone-400 mt-1.5">提交后会保存到服务器全局 cookies 文件，后续 YouTube 任务自动复用；本次任务临时副本处理结束后仍会删除。</p>
         </div>
       </div>
     </form>

@@ -61,6 +61,18 @@ def test_cookie_header_normalized_to_netscape():
     assert "__Secure-3PSID\tghi" in text
 
 
+def test_save_global_youtube_cookie_creates_configured_file(monkeypatch, tmp_path):
+    import app.main as m
+    cookie = tmp_path / "cookies" / "youtube.txt"
+    monkeypatch.setenv("YOUTUBE_COOKIE_FILE", str(cookie))
+    saved = m.save_global_youtube_cookie("Cookie: SID=abc; HSID=def")
+    assert saved == cookie.resolve()
+    text = cookie.read_text(encoding="utf-8")
+    assert text.startswith("# Netscape HTTP Cookie File")
+    assert "SID	abc" in text
+    assert "HSID	def" in text
+
+
 def test_job_cookie_file_overrides_global_cookie(monkeypatch, tmp_path):
     import app.main as m
     global_cookie = tmp_path / "global.txt"
