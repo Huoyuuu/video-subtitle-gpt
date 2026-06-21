@@ -55,8 +55,8 @@
   .input { padding: .75rem 1rem; font-size: 1rem; width: 100%; }
   .textarea { padding: .75rem 1rem; resize: vertical; width: 100%; }
   .select { padding: .6rem .85rem; font-weight: 600; color: #44403c; }
-  .input:focus, .textarea:focus, .select:focus {
-    border-color: #92400e; box-shadow: 0 0 0 3px rgba(146,64,14,.1);
+  .input:focus-visible, .textarea:focus-visible, .select:focus-visible {
+    outline: none; border-color: #92400e; box-shadow: 0 0 0 3px rgba(146,64,14,.1);
   }
 
   /* mode tabs */
@@ -111,16 +111,19 @@
   /* animations */
   .fade-in { animation: fadeIn .2s ease; }
   @keyframes fadeIn { from { opacity:0; transform:translateY(6px) } to { opacity:1; transform:none } }
+  @media (prefers-reduced-motion: reduce) { .fade-in { animation: none; } }
 
   /* scrollbar */
   ::-webkit-scrollbar { width: 9px; height: 9px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: #ded7c5; border-radius: 10px; border: 2px solid #f6f4ef; }
   ::-webkit-scrollbar-thumb:hover { background: #cdc4ad; }
+  * { scrollbar-width: thin; scrollbar-color: #ded7c5 transparent; }
 
   /* spinner */
   @keyframes spin { to { transform: rotate(360deg) } }
   .spin { animation: spin .8s linear infinite; }
+  @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
 
   .hide { display: none !important; }
 </style>
@@ -153,8 +156,8 @@
     <form id="jobForm" class="space-y-4">
       <!-- URL input -->
       <div class="flex gap-3">
-        <input name="url" id="url" class="input flex-1"
-          placeholder="粘贴 YouTube / Bilibili 链接（仅总结模式可留空）"/>
+        <input name="url" id="url" class="input flex-1" type="url" autocomplete="url"
+          placeholder="粘贴 YouTube / Bilibili 链接（仅总结模式可留空）…"/>
         <button type="submit" id="submitBtn" class="btn btn-primary whitespace-nowrap px-5">
           <i data-lucide="play" class="w-4 h-4"></i>
           <span>开始</span>
@@ -188,7 +191,7 @@
         <div>
           <label class="block text-xs font-bold text-stone-500 mb-1.5">自定义 Prompt（支持 {transcript} 变量）</label>
           <textarea name="custom_prompt" rows="5" class="textarea text-sm"
-            placeholder="留空使用预设 Prompt"></textarea>
+            placeholder="留空使用预设 Prompt…"></textarea>
         </div>
         <div>
           <label class="block text-xs font-bold text-stone-500 mb-1.5">手动字幕（仅总结模式）</label>
@@ -199,7 +202,7 @@
           <label class="block text-xs font-bold text-stone-500 mb-1.5">YouTube Cookie（可选，本次任务）</label>
           <textarea name="youtube_cookie" id="youtubeCookie" rows="4" class="textarea text-sm font-mono"
             autocomplete="off" autocapitalize="off" spellcheck="false"
-            placeholder="粘贴 Netscape cookies.txt，或浏览器请求头里的 Cookie: SID=...; HSID=..."></textarea>
+            placeholder="粘贴 Netscape cookies.txt，或浏览器请求头里的 Cookie: SID=…; HSID=…"></textarea>
           <p class="text-xs text-stone-400 mt-1.5">仅当前任务临时使用，处理结束后会从任务目录删除。</p>
         </div>
       </div>

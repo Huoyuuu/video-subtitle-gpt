@@ -305,8 +305,22 @@ def add_log(job_id: str, msg: str):
     _jobs[job_id].setdefault("logs", []).append({"time": now_iso(), "msg": msg})
 
 
+URL_RE = re.compile(r"https?://[^\s<>\]\[\)（）}】》。 ，,]+", re.IGNORECASE)
+
+
 def normalize_url(url: str) -> str:
-    return (url or "").strip()
+    text = (url or "").strip()
+    if not text:
+        return ""
+    m = URL_RE.search(text)
+    if m:
+        text = m.group(0)
+    # 用户从社交平台/聊天软件复制时，URL 后面可能混有标点或说明文字；这里只保留真正链接。
+    text = text.strip().rstrip("\'\"`.,;:!?。？！；：，、）)]}】》")
+    # B 站分享链接的查询参数通常不影响视频定位，去掉后可提升缓存命中率。
+    if is_bilibili_url(text):
+        text = re.sub(r"[?#].*$", "", text).rstrip("/")
+    return text
 
 
 def md5_text(text: str) -> str:

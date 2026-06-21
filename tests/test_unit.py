@@ -1,6 +1,16 @@
 ﻿from pathlib import Path
 
-from app.main import extract_youtube_id, format_youtube, load_prompt, cleanup_storage, JOBS_DIR
+from app.main import extract_youtube_id, format_youtube, load_prompt, cleanup_storage, JOBS_DIR, normalize_url
+
+
+def test_normalize_url_extracts_url_from_mixed_text():
+    raw = "【求生之路2官图《毫不留情》专家单通绝境17特】 https://www.bilibili.com/video/BV1W47y65Ecg/?share_source=copy_web&vd_source=418e92dfaf37df0a35ed6b1ff4da6b14"
+    assert normalize_url(raw) == "https://www.bilibili.com/video/BV1W47y65Ecg"
+
+
+def test_normalize_url_keeps_youtube_query_video_id():
+    raw = "看看这个 https://www.youtube.com/watch?v=abcdefghijk&t=1 后面的文字"
+    assert normalize_url(raw) == "https://www.youtube.com/watch?v=abcdefghijk&t=1"
 
 
 def test_extract_youtube_id_variants():
