@@ -647,6 +647,7 @@ async def download_audio(
         yt_args, youtube_auth_used = youtube_ytdlp_args(job_id, youtube_cookie_file)
         cmd += yt_args
     cmd += [
+        "-f", "ba/bestaudio",
         "-x", "--audio-format", "mp3", "--audio-quality", "5",
         "--no-playlist", "-o", outtmpl, url,
     ]

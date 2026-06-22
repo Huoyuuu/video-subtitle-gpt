@@ -123,3 +123,34 @@ def test_cleanup_storage_removes_oldest_when_over_limit(monkeypatch):
     monkeypatch.setattr(m, "MAX_STORAGE_BYTES", 25)
     cleanup_storage()
     assert not a.exists() or not b.exists()
+
+
+def test_download_audio_prefers_audio_only_format(monkeypatch, tmp_path):
+    import asyncio
+    import app.main as m
+
+    captured = {}
+
+    class FakeStdout:
+        async def readline(self):
+            return b""
+
+    class FakeProc:
+        stdout = FakeStdout()
+
+        async def wait(self):
+            return 0
+
+    async def fake_create_subprocess_exec(*cmd, **kwargs):
+        captured["cmd"] = list(cmd)
+        (tmp_path / "audio.mp3").write_bytes(b"fake mp3")
+        return FakeProc()
+
+    monkeypatch.setattr(m, "yt_dlp_executable", lambda: "yt-dlp")
+    monkeypatch.setattr(m.asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+
+    result = asyncio.run(m.download_audio("https://www.bilibili.com/video/BV17eVL6GEAh", tmp_path))
+
+    assert result.name == "audio.mp3"
+    assert "-f" in captured["cmd"]
+    assert captured["cmd"][captured["cmd"].index("-f") + 1] == "ba/bestaudio"
