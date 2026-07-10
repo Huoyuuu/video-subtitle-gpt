@@ -281,9 +281,14 @@
             <i data-lucide="captions" class="w-4 h-4 text-stone-500"></i>
             <h3 class="font-black text-sm">字幕内容</h3>
           </div>
-          <button onclick="copyEl('transcriptBox', this)" class="btn btn-ghost text-xs py-1 px-2">
-            <i data-lucide="copy" class="w-3.5 h-3.5"></i>复制
-          </button>
+          <div class="flex items-center gap-2">
+            <a id="transcriptDownloadInPanel" class="hide btn btn-ghost text-xs py-1 px-2" target="_blank">
+              <i data-lucide="download" class="w-3.5 h-3.5"></i>下载
+            </a>
+            <button onclick="copyEl('transcriptBox', this)" class="btn btn-ghost text-xs py-1 px-2">
+              <i data-lucide="copy" class="w-3.5 h-3.5"></i>复制
+            </button>
+          </div>
         </div>
         <div id="transcriptBox" class="transcript-box">暂无字幕</div>
       </section>
@@ -334,13 +339,42 @@ function esc(s) {
     ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
 }
 
-function copyEl(id, btn) {
+async function writeClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (_) {}
+  }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  ta.style.top = '-9999px';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  ta.setSelectionRange(0, ta.value.length);
+  try { return document.execCommand('copy'); }
+  finally { document.body.removeChild(ta); }
+}
+
+async function copyEl(id, btn) {
   const el = $(id);
-  const text = el.innerText || el.textContent || '';
-  navigator.clipboard.writeText(text);
+  const text = (el?.textContent || el?.innerText || '').trim();
   if (!btn) return;
   const orig = btn.innerHTML;
-  btn.innerHTML = '<i data-lucide="check" class="w-3.5 h-3.5"></i>已复制';
+  if (!text) {
+    btn.innerHTML = '<i data-lucide="alert-circle" class="w-3.5 h-3.5"></i>无内容';
+    lucide.createIcons();
+    setTimeout(() => { btn.innerHTML = orig; lucide.createIcons(); }, 1600);
+    return;
+  }
+  const ok = await writeClipboard(text);
+  btn.innerHTML = ok
+    ? '<i data-lucide="check" class="w-3.5 h-3.5"></i>已复制'
+    : '<i data-lucide="alert-circle" class="w-3.5 h-3.5"></i>复制失败';
   lucide.createIcons();
   setTimeout(() => { btn.innerHTML = orig; lucide.createIcons(); }, 1600);
 }
@@ -409,6 +443,12 @@ $('jobForm').onsubmit = async e => {
     $('youtubeCookie').value = '';
     showEl('currentJobSection');
     showEl('emptyState', false);
+    showEl('transcriptSection', false);
+    showEl('resultSection', false);
+    $('transcriptBox').textContent = '暂无字幕';
+    $('resultMd').textContent = '';
+    $('resultBody').innerHTML = '';
+    setLink('transcriptDownloadInPanel', null);
     clearInterval(pollTimer);
     pollTimer = setInterval(poll, 1200);
     poll();
@@ -500,6 +540,7 @@ function renderJob(j) {
   // transcript
   if (j.transcript) {
     $('transcriptBox').textContent = j.transcript;
+    setLink('transcriptDownloadInPanel', j.transcript_url);
     showEl('transcriptSection');
   }
 
@@ -558,7 +599,7 @@ function renderHistory() {
   `).join('');
 }
 
-function openHistory(i) {
+async function openHistory(i) {
   const it = historyItems[i];
   if (!it) return;
 
@@ -582,9 +623,19 @@ function openHistory(i) {
 
   // transcript link in history is transcript_hash based
   if (it.transcript_hash) {
-    setLink('transcriptLink', '/cache/transcripts/' + it.transcript_hash + '.txt');
-    showEl('transcriptSection', false);
+    const transcriptUrl = '/cache/transcripts/' + it.transcript_hash + '.txt';
+    setLink('transcriptDownloadInPanel', transcriptUrl);
+    $('transcriptBox').textContent = '字幕加载中…';
+    showEl('transcriptSection');
+    try {
+      const r = await fetch(transcriptUrl);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      $('transcriptBox').textContent = await r.text();
+    } catch (e) {
+      $('transcriptBox').textContent = '字幕加载失败，可点击右上角「下载」直接打开字幕文件。';
+    }
   } else {
+    setLink('transcriptDownloadInPanel', null);
     showEl('transcriptSection', false);
   }
 

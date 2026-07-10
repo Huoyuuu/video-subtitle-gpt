@@ -92,6 +92,48 @@ async def test_audio_ready_when_whisper_fails(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_audio_mode_only_downloads_audio(monkeypatch):
+    async def fake_download_audio(url, job_dir, job_id=None, youtube_cookie_file=None):
+        p = job_dir / "audio.mp3"
+        p.write_bytes(b"fake mp3")
+        return p
+
+    async def fail_groq_whisper(audio):
+        raise AssertionError("audio mode should not run Whisper")
+
+    async def fail_call_gpt(prompt, transcript, job_id=None):
+        raise AssertionError("audio mode should not call GPT")
+
+    monkeypatch.setattr(m, "download_audio", fake_download_audio)
+    monkeypatch.setattr(m, "groq_whisper", fail_groq_whisper)
+    monkeypatch.setattr(m, "call_gpt", fail_call_gpt)
+
+    async with AsyncClient(transport=ASGITransport(app=m.app), base_url="http://test") as client:
+        r = await client.post(
+            "/api/jobs",
+            data={
+                "url": "https://www.bilibili.com/video/BV17eVL6GEAh",
+                "prompt_name": "default",
+                "custom_prompt": "",
+                "start_mode": "audio",
+            },
+        )
+        assert r.status_code == 200
+        job_id = r.json()["job_id"]
+        final = None
+        for _ in range(30):
+            final = (await client.get(f"/api/jobs/{job_id}")).json()
+            if final["status"] == "done":
+                break
+            await asyncio.sleep(0.1)
+        assert final["status"] == "done"
+        assert final["stage"] == "音频已下载"
+        assert final["audio_url"].endswith("audio.mp3")
+        assert "result" not in final
+        assert "transcript" not in final
+
+
+@pytest.mark.asyncio
 async def test_youtube_cookie_from_form_is_used_temporarily(monkeypatch):
     async def fake_get_youtube_transcript(url):
         return None

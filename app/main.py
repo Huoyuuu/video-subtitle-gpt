@@ -736,10 +736,10 @@ async def call_gpt(prompt_text: str, transcript: str, job_id: str | None = None)
     for attempt in range(1, 4):
         try:
             if job_id:
-                add_log(job_id, f"调用 GPT（第 {attempt}/3 次），模型：{os.getenv('OPENAI_MODEL', 'gpt-5.5')}，base_url：{base_url}")
+                add_log(job_id, f"调用 GPT（第 {attempt}/3 次），模型：{os.getenv('OPENAI_MODEL', 'gpt-5.6-sol')}，base_url：{base_url}")
             resp = await asyncio.to_thread(
                 client.chat.completions.create,
-                model=os.getenv("OPENAI_MODEL", "gpt-5.5"),
+                model=os.getenv("OPENAI_MODEL", "gpt-5.6-sol"),
                 messages=[{"role": "user", "content": final_prompt}],
                 temperature=0.2,
             )
@@ -901,6 +901,17 @@ async def process(
             add_log(job_id, "直接字幕不可用，开始用 yt-dlp 下载音频。")
             audio_path = await download_audio(url, job_dir, job_id, job_youtube_cookie_file)
             set_job(job_id, audio_url=f"/download/{job_id}/{audio_path.name}")
+            if start_mode == "audio":
+                add_log(job_id, "音频已下载；按『仅下载音频』模式停止，不继续 Whisper 转写或 GPT 总结。")
+                set_job(
+                    job_id,
+                    status="done",
+                    progress=100,
+                    stage="音频已下载",
+                    message="音频已下载，可直接下载；本模式不会转写或总结。",
+                    audio_url=f"/download/{job_id}/{audio_path.name}",
+                )
+                return
             set_job(job_id, progress=55, stage="Whisper 转写")
             try:
                 transcript = await groq_whisper(audio_path)
