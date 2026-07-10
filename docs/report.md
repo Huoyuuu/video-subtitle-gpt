@@ -4,36 +4,22 @@
 
 ## 完成内容
 
-1. 将项目文档目录从 `doc/` 规范化重命名为 `docs/`。
-2. 将 GPT 总结默认模型从 `gpt-5.5` / 文档中的旧示例统一更新为 `gpt-5.6-sol`：
-   - `app/main.py` 的运行时默认值
-   - `.env.example` 的默认配置
-   - `docs/video-subtitle-gpt.md` 的部署与环境变量说明
-3. 保持原 API 配置方式不变：应用只读取 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`，不引入其他密钥或网关变量。
-4. 修正文档中的服务器部署目录，使其与实际部署目录 `/home/huoyuuu/video-subtitle-gpt` 一致。
-5. 在 README 中补充默认模型和新文档路径。
-6. 新增默认模型回归测试，确保未设置 `OPENAI_MODEL` 时调用 `gpt-5.6-sol`。
-7. 本次发布同时包含工作区中已完成的页面复制/历史字幕回看优化，以及“仅下载音频”模式在下载完成后停止处理的修复。
+1. 将项目文档目录从 `doc/` 规范化为 `docs/`。
+2. 将 GPT 总结默认模型统一更新为 `gpt-5.6-sol`。
+3. 保持应用原有的 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL` 配置方式不变。
+4. 更新页面复制、历史字幕回看和“仅下载音频”流程说明。
+5. 新增模型默认值回归测试以及开发交接文档。
+6. 清理文档中的中转站地址、生产接口地址、真实账号、服务器目录、仓库地址、端口、服务名和部署环境细节。
 
-## 上线前验证
+## 验证结果
 
-- 使用生产服务器原有 `.env` 中的 `OPENAI_API_KEY` 与 `OPENAI_BASE_URL=https://chiyicn.com/v1` 测试 `gpt-5.6-sol`。
-- 测试请求：Chat Completions，用户消息 `hi`，并携带应用当前使用的 `temperature=0.2`。
-- 结果：请求成功，返回模型为 `gpt-5.6-sol`。
-- 自动化测试：`24 passed`。
+- 目标模型已使用生产环境原有 API 配置完成连通性测试。
+- API Key 与 Base URL 的具体值不写入文档或版本库。
+- 自动化测试结果：`24 passed`。
+- 发布后服务状态和 HTTP 健康检查正常。
 
-## 变更原则
+## 信息保护约定
 
-- 未修改或迁移生产 API Key。
-- 未修改生产 Base URL。
-- 未把密钥写入仓库。
-- `data/debug/` 等本地调试数据不纳入提交。
-
-## 上线结果
-
-- 首次发布提交：`9db6ce4 Update GPT model and subtitle workflow`。
-- 已推送到 `origin/main`，服务器部署钩子成功更新代码并重启 systemd 服务。
-- 服务器 `.env` 已设置 `OPENAI_MODEL=gpt-5.6-sol`，原 `OPENAI_API_KEY` 与 `OPENAI_BASE_URL` 保持不变。
-- `video-subtitle-gpt.service` 状态为 `active`。
-- `http://127.0.0.1:18004/` 健康检查返回 HTTP `200`。
-- 使用已部署的 `app.main.call_gpt` 再次执行 `hi` 测试，配置模型为 `gpt-5.6-sol`，返回 `hi`。
+- 文档只保留环境变量名称，不记录 API Key 或真实 Base URL。
+- 部署目录、服务器账号、仓库地址和外部服务地址统一使用占位符。
+- 本地调试数据不纳入提交。
