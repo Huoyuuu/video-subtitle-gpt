@@ -28,3 +28,12 @@
 - 未修改生产 Base URL。
 - 未把密钥写入仓库。
 - `data/debug/` 等本地调试数据不纳入提交。
+
+## 上线结果
+
+- 首次发布提交：`9db6ce4 Update GPT model and subtitle workflow`。
+- 已推送到 `origin/main`，服务器部署钩子成功更新代码并重启 systemd 服务。
+- 服务器 `.env` 已设置 `OPENAI_MODEL=gpt-5.6-sol`，原 `OPENAI_API_KEY` 与 `OPENAI_BASE_URL` 保持不变。
+- `video-subtitle-gpt.service` 状态为 `active`。
+- `http://127.0.0.1:18004/` 健康检查返回 HTTP `200`。
+- 使用已部署的 `app.main.call_gpt` 再次执行 `hi` 测试，配置模型为 `gpt-5.6-sol`，返回 `hi`。
